@@ -13,15 +13,16 @@ ENV ISSUER_NAME "example"
 ENV PUBLIC_NAME "public"
 ENV RSA_KEY_NUMBITS "2048"
 ENV DAYS "365"
+ENV KEYSTORE_NAME "keystore"
+ENV KEYSTORE_PASS "changeit"
+ENV CERT_DIR "/etc/ssl/certs"
 
 # install openssl
 RUN apk add --update openssl && \
     rm -rf /var/cache/apk/*
 
-# certificate directories
-ENV CERT_DIR "/etc/ssl/certs"
-VOLUME ["$CERT_DIR"]
-
 COPY *.ext /
-COPY entrypoint.sh /
-ENTRYPOINT ["/entrypoint.sh"]
+COPY docker-entrypoint.sh /
+
+VOLUME ["$CERT_DIR"]
+ENTRYPOINT ["/docker-entrypoint.sh"]
