@@ -27,7 +27,7 @@ then
     -key "$CERT_DIR/$ROOT_NAME.key" \
     -in "$CERT_DIR/$ROOT_NAME.csr" \
     -out "$CERT_DIR/$ROOT_NAME.crt" \
-    -days "$DAYS"
+    -days "3650"
 else
   echo "ENTRYPOINT: $ROOT_NAME.crt already exists"
 fi
@@ -58,48 +58,9 @@ then
     -out "$CERT_DIR/$ISSUER_NAME.crt" \
     -CAcreateserial \
     -extfile issuer.ext \
-    -days "$DAYS"
+    -days "3650"
 else
   echo "ENTRYPOINT: $ISSUER_NAME.crt already exists"
-fi
-
-if [ ! -f "$CERT_DIR/$PUBLIC_NAME.key" ]
-then
-  # generate public rsa key
-  echo " ---> Generate private key"
-  openssl genrsa \
-    -out "$CERT_DIR/$PUBLIC_NAME.key" \
-    "$RSA_KEY_NUMBITS"
-else
-  echo "ENTRYPOINT: $PUBLIC_NAME.key already exists"
-fi
-
-if [ ! -f "$CERT_DIR/$PUBLIC_NAME.crt" ]
-then
-  # generate public certificate
-  echo " ---> Generate public certificate request"
-  PUBLIC_SUBJ="$SUBJ/CN=$PUBLIC_CN"
-  openssl req \
-    -new \
-    -key "$CERT_DIR/$PUBLIC_NAME.key" \
-    -out "$CERT_DIR/$PUBLIC_NAME.csr" \
-    -subj "$PUBLIC_SUBJ"
-
-  # append public cn to subject alt names
-  echo "DNS.1 = $PUBLIC_CN" >> public.ext
-
-  echo " ---> Generate public certificate signed by $ISSUER_CN"
-  openssl x509 \
-    -req \
-    -in "$CERT_DIR/$PUBLIC_NAME.csr" \
-    -CA "$CERT_DIR/$ISSUER_NAME.crt" \
-    -CAkey "$CERT_DIR/$ISSUER_NAME.key" \
-    -out "$CERT_DIR/$PUBLIC_NAME.crt" \
-    -CAcreateserial \
-    -extfile public.ext \
-    -days "$DAYS"
-else
-  echo "ENTRYPOINT: $PUBLIC_NAME.crt already exists"
 fi
 
 if [ ! -f "$CERT_DIR/ca.pem" ]
@@ -110,6 +71,89 @@ then
 else
   echo "ENTRYPOINT: ca.pem already exists"
 fi
+
+if [ ! -z $PUBLIC_NAME ] && [ ! -z $PUBLIC_CN ]
+then
+  if [ ! -f "$CERT_DIR/$PUBLIC_NAME.key" ]
+  then
+    # generate public rsa key
+    echo " ---> Generate private key"
+    openssl genrsa \
+      -out "$CERT_DIR/$PUBLIC_NAME.key" \
+      "$RSA_KEY_NUMBITS"
+  else
+    echo "ENTRYPOINT: $PUBLIC_NAME.key already exists"
+  fi
+
+  if [ ! -f "$CERT_DIR/$PUBLIC_NAME.crt" ]
+  then
+    # generate public certificate
+    echo " ---> Generate public certificate request"
+    PUBLIC_SUBJ="$SUBJ/CN=$PUBLIC_CN"
+    openssl req \
+      -new \
+      -key "$CERT_DIR/$PUBLIC_NAME.key" \
+      -out "$CERT_DIR/$PUBLIC_NAME.csr" \
+      -subj "$PUBLIC_SUBJ"
+
+    # append public cn to subject alt names
+    echo "DNS.1 = $PUBLIC_CN" >> public.ext
+
+    echo " ---> Generate public certificate signed by $ISSUER_CN"
+    openssl x509 \
+      -req \
+      -in "$CERT_DIR/$PUBLIC_NAME.csr" \
+      -CA "$CERT_DIR/$ISSUER_NAME.crt" \
+      -CAkey "$CERT_DIR/$ISSUER_NAME.key" \
+      -out "$CERT_DIR/$PUBLIC_NAME.crt" \
+      -CAcreateserial \
+      -extfile public.ext \
+      -days "$DAYS"
+  else
+    echo "ENTRYPOINT: $PUBLIC_NAME.crt already exists"
+  fi
+fi
+
+if [ ! -z $USERCERTFILE ] && [ ! -z $USERNAME ] && [ ! -z $USEREMAIL ]
+then
+  USERNAME_SUBJ="$SUBJ/CN=$USERNAME/emailAddress=$USEREMAIL"
+  if [ ! -f "$CERT_DIR/$USERCERTFILE.key" ]
+  then
+    # generate public rsa key
+    echo " ---> Generate private key for $USERNAME"
+    openssl genrsa -out "$CERT_DIR/$USERCERTFILE.key" "$RSA_KEY_NUMBITS"
+  else
+    echo "ENTRYPOINT: $USERCERTFILE.key already exists"
+  fi
+
+  if [ ! -f "$CERT_DIR/$USERCERTFILE.csr" ]
+  then
+    # generate CSR for $USERNAME
+    echo " ---> Generate certificate request for $USERNAME"
+    openssl req -new -key "$CERT_DIR/$USERCERTFILE.key" -out "$CERT_DIR/$USERCERTFILE.csr" \
+      -subj "$USERNAME_SUBJ"
+  else
+    echo "ENTRYPOINT: $USERCERTFILE.csr already exists"
+  fi
+
+  if [ ! -f "$CERT_DIR/$USERCERTFILE.crt" ]
+  then
+    # sign the CSR for $USERNAME
+    echo " ---> Sign the CSR for $USERNAME"
+    openssl x509 -req -days "$DAYS" -in "$CERT_DIR/$USERCERTFILE.csr" -extfile v3.ext \
+      -CA "$CERT_DIR/$ISSUER_NAME.crt" \
+      -CAkey "$CERT_DIR/$ISSUER_NAME.key" \
+      -out "$CERT_DIR/$USERCERTFILE.crt" -setalias "$USERNAME Personal Certificate"\
+      -CAcreateserial \
+      -addtrust emailProtection -addreject clientAuth -addreject serverAuth -trustout
+
+    openssl pkcs12 -export -in "$CERT_DIR/$USERCERTFILE.crt" -inkey "$CERT_DIR/$USERCERTFILE.key" \
+      -out "$CERT_DIR/$USERCERTFILE.p12" -passout "pass:secret" -name "$USERNAME pkcs12"
+  else
+    echo "ENTRYPOINT: $USERCERTFILE.key already exists"
+  fi
+fi
+
 
 # run command passed to docker run
 exec "$@"
